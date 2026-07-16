@@ -3522,6 +3522,8 @@ function onParallax(){ if(_paraRAF) return; _paraRAF=requestAnimationFrame(funct
     try{ Element.prototype.scrollIntoViewIfNeeded = function(){}; }catch(e){}
     /* focus() 유발 스크롤도 부모 프레임을 끌어당기므로 embed에선 preventScroll 강제 */
     try{ var _acFocus = HTMLElement.prototype.focus; HTMLElement.prototype.focus = function(o){ try{ return _acFocus.call(this, {preventScroll:true}); }catch(e){ return _acFocus.call(this); } }; }catch(e){}
+    /* 내부 스크롤 컨테이너를 잠가 체험영역 위 휠이 부모(페이지) 스크롤로 자연 전달되게 */
+    try{ var _acS=document.createElement('style'); _acS.textContent='html,body{overflow:hidden !important;} #previewScroll{overflow:hidden !important;}'; (document.head||document.documentElement).appendChild(_acS); }catch(e){}
   }
   // 코치 자동 실행: 단독·임베드 모두 (부모 스크롤 침범은 위에서 차단)
   window.addEventListener('load', function(){ setTimeout(function(){ try{ coachStart(); }catch(e){} }, 700); });
