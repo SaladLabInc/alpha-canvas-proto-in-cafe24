@@ -3517,7 +3517,12 @@ function onParallax(){ if(_paraRAF) return; _paraRAF=requestAnimationFrame(funct
 (function(){
   var wc=document.getElementById('welcome'); if(wc) wc.setAttribute('hidden','');
   // 임베드(상세페이지): 화면에 맞춰 축소돼 스크롤이 불필요 → scrollIntoView 무효화해 부모 페이지 침범 원천 차단
-  if(/[?&]embed/.test(location.search)){ try{ Element.prototype.scrollIntoView = function(){}; }catch(e){} }
+  if(/[?&]embed/.test(location.search)){
+    try{ Element.prototype.scrollIntoView = function(){}; }catch(e){}
+    try{ Element.prototype.scrollIntoViewIfNeeded = function(){}; }catch(e){}
+    /* focus() 유발 스크롤도 부모 프레임을 끌어당기므로 embed에선 preventScroll 강제 */
+    try{ var _acFocus = HTMLElement.prototype.focus; HTMLElement.prototype.focus = function(o){ try{ return _acFocus.call(this, {preventScroll:true}); }catch(e){ return _acFocus.call(this); } }; }catch(e){}
+  }
   // 코치 자동 실행: 단독·임베드 모두 (부모 스크롤 침범은 위에서 차단)
   window.addEventListener('load', function(){ setTimeout(function(){ try{ coachStart(); }catch(e){} }, 700); });
 })();
