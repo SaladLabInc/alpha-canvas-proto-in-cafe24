@@ -1,0 +1,26 @@
+name: Deploy to Cloudflare Pages
+
+# main에 머지/푸시되면 자동 배포. Actions 탭에서 수동 실행(Run workflow)도 가능.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy . --project-name=alpha-canvas-proto-in-cafe24 --branch=main
