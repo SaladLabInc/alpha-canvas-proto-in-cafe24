@@ -132,6 +132,17 @@
     else if ((el = t.closest('#sfcanvas [data-kind]'))) {
       send(K('click', 'canvasWidget'), { widget: el.dataset.kind, variant: VARIANT });
     }
+    /* 전환 CTA — 이 프로토의 최종 목적지다. 종전엔 RUM 자동 수집의 「click on 스킨 구매하러
+       가기 →」 라벨로만 남았는데, 그건 버튼 글자가 바뀌면 지표가 끊긴다. 키로 못박는다. */
+    else if ((el = t.closest('.fin-buy, .fin-trial, .trial-fab__main, .trial-fab__sub'))) {
+      var buy = el.classList.contains('fin-buy') || el.classList.contains('trial-fab__main');
+      var fin = el.classList.contains('fin-buy') || el.classList.contains('fin-trial');
+      send(K('click', 'cta'), {
+        target: buy ? 'buy' : 'trial',      /* 스킨 구매 / 7일 무료 체험 */
+        where: fin ? 'finishDialog' : 'fab',
+        variant: VARIANT
+      });
+    }
   }, true);
 
   /* ── 화면 출력 없음 ───────────────────────────────────────────────────────
@@ -144,8 +155,53 @@
        · `_ddrum.js` 에 RUM 값 두 개를 채우면 Datadog 에서 바로 보인다(권장 경로)
      알약을 되살릴 일이 있으면 round-8/_track.js 의 `build()`/`paint()` 를 그대로 가져온다. */
 
+  /* ── 퍼널 뼈대: 단계 «도달» 노출 ────────────────────────────────────────────
+     클릭만 모으면 「②까지 갔는데 아무것도 안 누르고 나갔다」가 안 잡혀 이탈 지점을 못 짚는다.
+     그래서 각 단계에 도달한 사실 자체를 남긴다 — 퍼널은 도달 이벤트로 짜고, 클릭은 그 안에서
+     무엇을 골랐는지 설명한다.
+
+     게이트 상태(S.step)는 _r9.js 클로저 안이라 밖에서 못 읽는다. 대신 게이트가 그려 놓는
+     진행 레일의 aria-current="step" 을 읽는다 — 화면에 실제로 서 있는 단계가 진실원본이고,
+     엔진에 손을 대지 않아도 된다. 같은 단계를 다시 그리는 리렌더가 잦으므로 값이 바뀔 때만
+     보낸다(스텝을 왕복하면 그때마다 한 번씩 남는 게 맞다 — 되돌아온 것도 행동이다). */
+  var STEP_NAME = ['업종', '구성', '위젯'];
+  var lastStep = null;
+  function curStep() {
+    var e = document.querySelector('#onb .prg__i[aria-current="step"]');
+    return e && e.dataset.steph !== undefined ? +e.dataset.steph : null;
+  }
+  function stepPing() {
+    var n = curStep();
+    if (n === null || n === lastStep) return;
+    lastStep = n; steps[n] = 1;
+    send(K('imp', 'step'), { step: n, name: STEP_NAME[n] || String(n), variant: VARIANT });
+  }
+
+  /* 완료 다이얼로그 노출 · 상세페이지 진입 — 둘 다 클래스 토글로 드러나므로 그것만 본다
+     (#finDlg.show / body.sf-detail 은 _r9.js syncPage 가 붙인다). */
+  var finSeen = false, detailSeen = false;
+  function overlayPing() {
+    var fin = document.getElementById('finDlg');
+    if (fin && fin.classList.contains('show') && !finSeen) {
+      finSeen = true;
+      send(K('imp', 'finishDialog'), { seconds_spent: Math.round((Date.now() - t0) / 1000), variant: VARIANT });
+    }
+    var onDetail = document.body.classList.contains('sf-detail');
+    if (onDetail && !detailSeen) { detailSeen = true; send(K('pageview', 'detail'), { variant: VARIANT }); }
+    if (!onDetail) detailSeen = false;   /* 메인으로 돌아갔다 다시 들어오면 다시 센다 */
+  }
+
+  function watch() {
+    stepPing(); overlayPing();
+    new MutationObserver(function () { stepPing(); overlayPing(); })
+      .observe(document.body, { childList: true, subtree: true, attributes: true,
+                                attributeFilter: ['class', 'aria-current'] });
+  }
+
   function boot() {
     send(K('pageview', 'gate'), { variant: VARIANT, variant_name: VNAME });
+    /* 게이트(#onb)는 _r9.js 가 DOMContentLoaded 뒤에 그린다 — 한 틱 뒤에 붙는다 */
+    setTimeout(watch, 600);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
