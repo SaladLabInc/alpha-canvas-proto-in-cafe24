@@ -64,6 +64,20 @@
       window.DD_RUM.setGlobalContextProperty('variant',
         (window.R9_LAY === 'b' || window.R9_LAY === 'c') ? window.R9_LAY : 'a');
     } catch (e) {}
+
+    /* 어디서 들어온 세션인지 — 샘플몰 인트로 모달(skin25-zigt sample-mall-intro-modal.js)이
+       CTA 에 `?tc_src=sample-intro&tc_sid=…` 를 붙여 보낸다. 그쪽은 Datadog Logs 로
+       imp_introDialog / click_tryBuilder 를 쏘는데, 이 값을 받아 두지 않으면 「모달을 본 사람 →
+       CTA 를 누른 사람 → 실제로 만져 본 사람」이 sid 로 이어지지 않아 마지막 칸이 빈다.
+       파라미터가 없으면(카페24 상세페이지·포털에서 직접 들어온 경우) 아무것도 넣지 않는다 —
+       빈 문자열을 넣으면 Datadog 에서 «값이 있는데 비어 있음» 으로 잡혀 필터가 지저분해진다. */
+    try {
+      var qs = new URLSearchParams(location.search);
+      ['tc_src', 'tc_sid'].forEach(function (k) {
+        var v = qs.get(k);
+        if (v) window.DD_RUM.setGlobalContextProperty(k, v.slice(0, 120));
+      });
+    } catch (e) {}
   };
   document.head.appendChild(s);
 })();
