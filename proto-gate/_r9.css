@@ -1,0 +1,580 @@
+/* R7 온보딩 게이트 — 전부 #onb 아래로 스코프한다.
+   canvas-intro 는 자기 :root 토큰(--ink/--accent 등)을 갖고 있으므로 섞이지 않게 격리하고,
+   게이트 자체는 SDS 토큰(var(--sds-*))만 쓴다. */
+
+#onb {
+  position: fixed; inset: 0 auto 0 0; width: 40vw; min-width: 380px; z-index: 9000;
+  display: flex; flex-direction: column;
+  background: var(--sds-bg-primary);
+  border-right: 1px solid var(--sds-border-default);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, .10);
+  font-family: var(--sds-font-family-base);
+  color: var(--sds-text-primary);
+}
+#onb[hidden] { display: none; }
+
+/* 게이트가 열려 있는 동안 빌더를 오른쪽 절반으로 민다.
+   .showcase 의 padding 만 바꾸면 #scWindow 가 좁아지고, 빌더의 fit() 이
+   resize 이벤트로 스케일을 다시 계산한다(강제 dispatch — _r7.js). */
+/* ── 수정 화면(빌더)은 뷰포트 100% ─────────────────────────────────────
+   쇼케이스 카드(둥근 창 · 바깥 여백 · 배경 장식 · 하단 CTA)를 걷어내고 빌더가
+   화면을 그대로 채우게 한다. 게이트가 열려 있으면 오른쪽 절반 전체를 쓴다.
+   세로까지 채우는 건 fit() 이 #stage 의 논리 높이를 늘려서 처리한다(v01-inject.html).
+   가로 논리폭 1440 은 그대로 둔다 — 빌더의 설계 폭을 바꾸지 않기 위해서다. */
+.showcase { padding: 0 !important; gap: 0 !important; min-height: 100vh; }
+.showcase__tabs, .showcase__cta, .demo-note, .bg-green, .bg-warm { display: none !important; }
+#scWindow {
+  position: fixed; inset: 0; height: 100vh; max-width: none;
+  aspect-ratio: auto; border-radius: 0; box-shadow: none; border: 0;
+  /* 게이트 4 : 캔버스 6 — 게이트가 질문을 다 펼칠 만큼은 넓고, 캔버스는 판단할 만큼 넓게.
+     이 값을 **기본값으로** 둔다(예전엔 100vw 가 기본이고 게이트가 열릴 때만 60vw 였다) —
+     아래 «첫 페인트» 주석 참고. inset:0 이 left:0 을 깔므로 순서상 뒤에 와야 한다. */
+  left: 40vw; width: 60vw;
+}
+body.onb-open #scWindow { left: 40vw; width: 60vw; }
+/* 게이트를 닫으면(=「이 셋팅으로 시작하기」) 빌더가 화면 전체를 쓴다 */
+body.onb-closed #scWindow { left: 0; width: 100vw; }
+
+/* ── 첫 페인트: 전체폭 한 프레임을 없앤다 ────────────────────────────────
+   게이트는 스크립트 맨 끝에서 DOMContentLoaded 뒤에 만들어진다. 그래서 그 전에 빌더가
+   **화면 전체 폭으로 한 번 그려지고**(fit() 이 1.11배로 확대), 게이트가 붙는 순간 오른쪽
+   60% 로 줄어든다 — 실측 636ms 에 전체폭으로 떴다가 700ms 에 줄었다(64ms).
+   「새로고침하면 프로토타입이 0.1초 나왔다 사라진다」가 정확히 이 한 프레임이다.
+   → 게이트 자리를 CSS 가 처음부터 비워 두고(위 #scWindow 기본값), 그 자리에 게이트와
+     같은 판을 미리 깔아 둔다. 빌더는 첫 페인트부터 제 자리·제 배율이라 줄어들 일이 없다.
+   `:not(.onb-open):not(.onb-closed)` = open() 이 아직 한 번도 안 돌았다(= 부팅 전)는 뜻.
+   판 값은 #onb 와 같게 유지한다 — 어긋나면 게이트가 붙는 순간 테두리가 튄다. */
+body:not(.onb-open):not(.onb-closed)::before {
+  content: ''; position: fixed; inset: 0 auto 0 0; width: 40vw; min-width: 380px; z-index: 9000;
+  background: var(--sds-bg-primary);
+  border-right: 1px solid var(--sds-border-default);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, .10);
+}
+
+/* 게이트에서 연 위젯 갤러리 — 스케일된 #stage 안이 아니라 body 로 옮겨(포털)
+   화면 전환 없이 지금 화면 위를 그대로 덮는다(_r7.js openWidgets). */
+#scrim.onb-portal { position: fixed; inset: 0; z-index: 9500; padding: 40px 0; }
+#scrim.onb-portal .modal { max-height: calc(100vh - 80px); }
+
+#onb .onb__sc { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px 8px; }
+
+/* 세 시안이 공유하는 머리 한 줄 — 「무엇을 하는 화면인가」(약속)와 「오른쪽이 살아 있다」
+   (즉시 반영). 셋 다 같은 높이를 먹으므로 비교에 유·불리가 생기지 않는다. */
+#onb .onb__top {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid var(--sds-border-default);
+}
+#onb .onb__top b {
+  flex: 1; min-width: 0; font-size: var(--sds-font-size-lg); font-weight: var(--sds-font-weight-bold);
+  letter-spacing: -.03em; line-height: var(--sds-line-height-tight);
+}
+
+/* ① 업종 */
+/* 업종 9종 — 3열이면 3×3 으로 딱 떨어진다(4열은 마지막 줄에 1개만 남는다) */
+#onb .ig { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+@media (max-width: 1100px) { #onb .ig { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* 카드 아래 여백은 카드가 아니라 **글자 마진**이 만든다 — 둘 다 주면 아래쪽만 두 번
+   더해져(9px + 마진) 위·좌우보다 넓어진다. 그래서 padding 을 0 으로 두고 `.ic b` 의
+   16px 마진 한 값이 네 변을 다 맡는다. */
+#onb .ic {
+  position: relative; text-align: left; cursor: pointer; overflow: hidden;
+  padding: 0; border: 1px solid var(--sds-border-default);
+  border-radius: var(--sds-radius-xl); background: var(--sds-bg-primary);
+  font-family: inherit; transition: border-color .12s, box-shadow .12s;
+}
+#onb .ic:hover { border-color: var(--sds-border-strong); }
+#onb .ic[aria-pressed="true"] {
+  border-color: var(--sds-border-brand);
+  box-shadow: 0 0 0 1px var(--sds-border-brand);
+  background: var(--sds-bg-brand-subtle);
+}
+/* 썸네일 비율 4:3 — 업종 사진의 원본 비율이 0.75(360×480 세로컷)에서 2.29(1200×525 시안
+   히어로)까지 벌어져 있어서 한 상자로 전부를 안 자를 방법은 없다. 16:9 로 두면 세로컷
+   업종(패션의류·패션잡화·뷰티)이 가운데 띠만 남고, 4:3 이면 그쪽 손실이 크게 줄고
+   가로로 긴 시안 히어로는 좌우가 조금 잘리는 선에서 끝난다(풍경컷이라 견딘다). */
+#onb .ic__th { display: block; width: 100%; aspect-ratio: 4 / 3; background-size: cover; background-position: center; }
+/* 업종 이름 여백 16px — 위 8px·좌우 10px 로는 사진과 테두리에 글자가 붙어 보였다 */
+#onb .ic b { display: block; margin: 16px; font-size: var(--sds-font-size-sm); font-weight: var(--sds-font-weight-bold); letter-spacing: -.02em; }
+/* 슬로건용이던 `.ic span { margin:2px 10px }` 이 **썸네일에도 먹고 있었다** —
+   .ic__th 가 span 이라서다. 그래서 사진이 카드 안에서 좌우 10px·위 2px 밀린 채로
+   깔렸고(흰 테두리처럼 보였다), width:100% 는 그대로라 오른쪽이 그만큼 잘려 나갔다.
+   「꽉 차지 않는다」와 「일부 잘려 있다」가 같은 원인이었다. 슬로건을 뺐으므로
+   이 규칙은 지우고, 썸네일은 여백 0 으로 못 박는다. */
+#onb .ic__th { margin: 0; }
+
+/* ② 상품 수 · ③ 컨셉 */
+#onb .cg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+#onb .pset { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+#onb .cc, #onb .pcard {
+  text-align: left; cursor: pointer; padding: 11px 13px; font-family: inherit;
+  border: 1px solid var(--sds-border-default);
+  border-radius: var(--sds-radius-xl); background: var(--sds-bg-primary);
+  transition: border-color .12s, box-shadow .12s;
+}
+#onb .cc:hover, #onb .pcard:hover { border-color: var(--sds-border-strong); }
+#onb .cc[aria-pressed="true"], #onb .pcard[aria-pressed="true"] {
+  border-color: var(--sds-border-brand);
+  box-shadow: 0 0 0 1px var(--sds-border-brand);
+  background: var(--sds-bg-brand-subtle);
+}
+#onb .cc b, #onb .pcard b { display: block; font-size: var(--sds-font-size-sm); font-weight: var(--sds-font-weight-bold); letter-spacing: -.02em; }
+#onb .cc span, #onb .pcard span { display: block; margin-top: 3px; font-size: var(--sds-font-size-2xs); line-height: var(--sds-line-height-snug); color: var(--sds-text-tertiary); }
+#onb .pcard em {
+  font-style: normal; font-size: var(--sds-font-size-2xs); font-weight: var(--sds-font-weight-bold); margin-left: 5px;
+  padding: 2px 6px; border-radius: var(--sds-radius-full); background: var(--sds-bg-brand-subtle); color: var(--sds-text-brand);
+}
+/* 구성 카드 = 이름 + 「상품 N번째」 배지 / 그 아래 앞 네 구역 순서.
+   순서 줄에서 배너 다음 첫 칸만 진하게 — 거기가 프리셋마다 갈리는 자리다. */
+#onb .pcard span i { font-style: normal; font-weight: var(--sds-font-weight-bold); color: var(--sds-text-primary); }
+
+/* ③ 위젯 — 레이어 목록. 위가 페이지 위쪽이고 줄을 끌어서 옮긴다. */
+/* 목록 맨 아래 추가 버튼 — 한 줄로 길게(폭 100%). `.onb__wg` 의 기본이 이미 width:100% 라
+   가운데 정렬만 얹는다. 목록의 마지막 칸처럼 보이게 위 간격은 줄 간격(5px)의 두 배만 준다.
+   ⚠ 선택자에 `.onb__wg` 를 함께 적는다 — `#onb .onb__wg { text-align:left }` 와 특이도가 같아서
+     클래스 하나만 쓰면 **파일에서 뒤에 오는 그쪽이 이긴다**(실제로 왼쪽 정렬로 남았다). */
+#onb .onb__wg.lyradd { margin-top: 10px; text-align: center; }
+#onb .lyrs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+/* 행을 키운다 — 이 목록은 「무엇이 어떤 순서로 쌓였나」를 읽고 **끌어 옮기는** 자리다.
+   글자가 작으면 읽는 데 힘이 들어가고, 줄이 얇으면 끌 곳으로 보이지 않는다.
+   ⚠ 안내문은 두지 않는다 — 잡는 자리(⣿)와 눌러 보면 아는 ▲▼ 로만 말한다. */
+#onb .lyr {
+  display: flex; align-items: center; gap: 10px; padding: 12px 12px;
+  border: 1px solid var(--sds-border-default); border-radius: var(--sds-radius-lg);
+  background: var(--sds-bg-primary); cursor: grab;
+  transition: border-color .12s, box-shadow .12s;
+}
+/* 호버에 살짝 떠오르게 — 「이 줄은 집어서 옮기는 것」을 글 없이 알리는 두 번째 신호 */
+#onb .lyr:hover { border-color: var(--sds-border-strong); box-shadow: 0 2px 9px rgba(0, 0, 0, .07); }
+#onb .lyr:active { cursor: grabbing; }
+/* 잡는 자리 — 글리프 하나로 끝낸다(상세페이지 탭 목록과 같은 ⣿) */
+#onb .lyr__g {
+  flex: none; font-size: 15px; line-height: 1; letter-spacing: -.08em;
+  color: var(--sds-text-tertiary); transition: color .12s;
+}
+#onb .lyr:hover .lyr__g { color: var(--sds-text-brand); }
+/* 지금 오른쪽에서 골라 둔 위젯 — 업종·구성 카드가 켜지는 방식과 같게 맞춘다
+   (테두리 + 1px 링 + 옅은 브랜드 배경). 어느 항목에서 켜졌든 같은 신호로 읽히게. */
+#onb .lyr.on {
+  border-color: var(--sds-border-brand);
+  box-shadow: 0 0 0 1px var(--sds-border-brand);
+  background: var(--sds-bg-brand-subtle);
+}
+#onb .lyr.on .lyr__n, #onb .lyr.on .lyr__t { color: var(--sds-text-brand); }
+#onb .lyr.drag { opacity: .4; cursor: grabbing; box-shadow: none; }
+/* 놓을 자리 — 줄의 위/아래 절반에 따라 앞이냐 뒤냐를 선으로 보여 준다 */
+/* 놓을 자리 선 — 행이 두꺼워진 만큼 3px 로 올린다(2px 은 테두리와 구별이 안 된다).
+   `.on`·`:hover` 보다 뒤에 와서 같은 특이도로 이긴다 — 끌고 있는 동안엔 이 선이 우선이다. */
+#onb .lyr.over-a { box-shadow: 0 -3px 0 0 var(--sds-border-brand); }
+#onb .lyr.over-b { box-shadow: 0 3px 0 0 var(--sds-border-brand); }
+#onb .lyr__n {
+  flex: none; width: 19px; text-align: center;
+  font-size: var(--sds-font-size-sm); font-weight: var(--sds-font-weight-bold);
+  color: var(--sds-text-tertiary); font-variant-numeric: tabular-nums;
+}
+#onb .lyr__t {
+  flex: 1; min-width: 0; text-align: left; cursor: pointer; font-family: inherit;
+  background: none; border: none; padding: 0;
+  font-size: var(--sds-font-size-lg); font-weight: var(--sds-font-weight-bold); letter-spacing: -.02em;
+  color: var(--sds-text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#onb .lyr__t:hover { color: var(--sds-text-brand); }
+/* ③-상세 목록 전용 — 줄 하나가 「이름 + 무엇인지 한 줄 + 지금 있는지」다. 메인 목록은
+   순서가 뜻을 갖지만(번호·▲▼) 이 목록은 순서가 없으므로 그 자리를 설명과 상태가 쓴다. */
+#onb .lyr__t em {
+  display: block; margin-top: 2px; font-style: normal;
+  font-size: var(--sds-font-size-2xs); font-weight: var(--sds-font-weight-regular);
+  letter-spacing: 0; color: var(--sds-text-tertiary);
+}
+#onb .lyr__st {
+  flex: none; font-size: var(--sds-font-size-2xs); font-weight: var(--sds-font-weight-bold);
+  color: var(--sds-text-tertiary);
+}
+#onb .lyr[data-dpadd] { cursor: pointer; }
+#onb .lyr__mv { flex: none; display: flex; gap: 3px; }
+#onb .lyr__mv button {
+  width: 25px; height: 25px; padding: 0; cursor: pointer; font-family: inherit; line-height: 1;
+  border: 1px solid var(--sds-border-default); border-radius: var(--sds-radius-md);
+  background: var(--sds-bg-primary); color: var(--sds-text-secondary); font-size: 9px;
+}
+#onb .lyr__mv button:hover:not(:disabled) { border-color: var(--sds-border-brand); color: var(--sds-text-brand); }
+#onb .lyr__mv button:disabled { opacity: .3; cursor: default; }
+/* `.lyrn`(목록 아래 주의 문구)도 함께 지웠다 — 남은 건 「위젯이 없습니다」 안내뿐이다. */
+#onb .lyr0 {
+  font-size: var(--sds-font-size-2xs); line-height: var(--sds-line-height-snug); color: var(--sds-text-tertiary);
+}#onb .dph b {
+  flex: 1; min-width: 0; font-size: var(--sds-font-size-xs);
+  font-weight: var(--sds-font-weight-bold); letter-spacing: -.02em; color: var(--sds-text-brand);
+}
+#onb .dph__b {
+  flex: none; cursor: pointer; font-family: inherit; padding: 0; border: 0; background: none;
+  font-size: var(--sds-font-size-xs); font-weight: var(--sds-font-weight-bold);
+  color: var(--sds-text-brand); text-decoration: underline; text-underline-offset: 2px;
+}/* 「자세히」 = 값이 자유로운 것(색·문구·탭 이름)을 오른쪽 인스펙터로 넘기는 문. 고르는 건
+   왼쪽에서 끝나므로 이 링크는 조용해야 한다 — 버튼처럼 세우면 슬롯의 주인이 뒤바뀐다. *//* 선택지 — 한 줄에 균등 분할(2~3개). 탭처럼 개수가 늘 수 있는 건 `--w` 로 흘려 감는다. *//* 켜짐은 업종·구성 카드와 **같은 신호**(테두리 + 1px 링 + 옅은 브랜드 배경)로 맞춘다 *//* 잠긴 선택지 — 고정형에서 「스크롤 중 구매」처럼 **그 구성에서 존재하지 않는** 자리다.
+   누를 수 있게 두면 눌러도 아무 일이 없고, 그게 이 슬롯을 만든 이유(무반응 제거)를 배신한다. *//* 추가 위젯 — 껐다 켜는 것이라 선택지가 아니라 스위치 줄이다(둘 다 켤 수 있다). *//* 주입 결과 요약 — 지어내지 않고 실제 넣은 것만 센다 */
+#onb .onb__sum {
+  margin-top: 30px; padding: 12px 13px; font-size: var(--sds-font-size-xs); line-height: var(--sds-line-height-relaxed);
+  border: 1px solid var(--sds-border-default); border-radius: var(--sds-radius-xl);
+  background: var(--sds-bg-secondary); color: var(--sds-text-secondary);
+}
+#onb .onb__sum b { color: var(--sds-text-primary); }
+#onb .onb__sum u { display: block; margin-top: 6px; text-decoration: none; color: var(--sds-text-tertiary); font-size: var(--sds-font-size-2xs); }
+
+#onb .onb__ft {
+  flex: none; padding: 14px 28px 18px; border-top: 1px solid var(--sds-border-default);
+  display: flex; align-items: center; gap: 10px;
+}
+#onb .onb__go {
+  flex: 1; cursor: pointer; font-family: inherit; border: none;
+  padding: 13px 18px; border-radius: var(--sds-radius-xl);
+  background: #1a1a1a; color: #fff;
+  font-size: var(--sds-font-size-md); font-weight: var(--sds-font-weight-bold); letter-spacing: -.02em;
+}
+#onb .onb__go:hover { background: #000; }
+#onb .onb__skip {
+  cursor: pointer; font-family: inherit; background: none; border: none;
+  font-size: var(--sds-font-size-sm); color: var(--sds-text-tertiary); text-decoration: underline; text-underline-offset: 3px;
+}
+#onb .onb__live {
+  flex: none; font-size: var(--sds-font-size-2xs);
+  font-weight: var(--sds-font-weight-bold); color: var(--sds-text-brand);
+}
+
+/* ── 오른쪽은 「웹/모바일로 확인하는 프리뷰」만 남긴다 ────────────────────
+   빼는 것: nav.toolbar(위젯·헤더·푸터·디자인 레일) · .urlbar(가짜 주소창) ·
+            .demo-note(체험용 데모 안내 배지).
+   남는 것: GNB 의 기기 전환 세그먼트(데스크톱/모바일)와 페이지 pill.
+            기기 전환은 GNB 안에 있어서 위 셋을 지워도 살아 있다.
+   ⚠ toolbar 를 지우면 위젯 갤러리 진입점이 같이 사라진다 → 게이트와 하단
+     손잡이로 옮겼다(모달 자체는 원본 그대로 쓴다 — _r7.js). */
+/* nav.toolbar 는 **되살린다** — 실제 빌더도 맨 오른쪽에 같은 레일(공통·헤더·푸터·
+   디자인·위젯)을 두고, 헤더·푸터·디자인 속성으로 들어가는 유일한 입구다.
+   R7 초기엔 «프리뷰만 남긴다»고 지웠는데 그러면 헤더 설정에 들어갈 길이 없어진다. */
+#stage .urlbar,
+.showcase > .demo-note { display: none !important; }
+/* 레일이 실제 빌더처럼 보이게 — 패널 오른쪽 바깥, 세로 아이콘 + 라벨 */
+#stage nav.toolbar {
+  border-left: 1px solid var(--line, #E9ECEE);
+  background: #fff;
+}
+
+/* 넓은 배너의 버튼이 「텍스트 위치」 설정을 따르게 한다.
+   빌더 CSS 가 .cb-b-btn 에 align-self:flex-start 를 못 박아 둬서, 속성 패널에서
+   위치를 「하단 중앙」으로 바꿔도 제목·본문만 가운데로 가고 버튼은 왼쪽에 남았다.
+   auto 로 되돌리면 컨테이너의 align-items(=패널이 정한 위치)를 그대로 따른다.
+   LIEN 시안(6223:7719)이 로고·문구·버튼을 모두 하단 중앙에 두는 구성이라 드러났다. */
+#stage .cb-b-tx > .cb-b-btn { align-self: auto; }
+
+/* 이미지 텍스트 위젯 — 시안은 그림자도 라운드도 없는 풀블리드 2단이다.
+   빌더가 이 위젯에만 카드 그림자(0 8px 26px)와 radius 16 을 인라인으로 박아 둬서,
+   페이지에서 이 섹션 하나만 카드처럼 떠 보였다. 다른 위젯은 전부 그림자가 없다.
+   (인라인 스타일이라 클래스가 없다 — min-height:360px 이 이 위젯만의 표식이다) */
+#stage .bsec__in > div[style*="min-height:360px"] {
+  box-shadow: none !important; border-radius: 0 !important;
+}
+
+/* 게이트가 열려 있으면 빌더가 오른쪽 절반으로 줄고 stage 가 0.55 로 축소된다 →
+   모바일 프레임이 화면상 222px 밖에 안 돼 판단이 안 된다. 레일·주소창을 걷어내
+   생긴 여백을 써서 zoom 으로 키운다. **CSS 폭은 402px 그대로**라 여전히 정직한
+   모바일 프리뷰다(폭을 늘리면 모바일이 아니게 된다 — R6 에서 쓴 방식과 같다). */
+body.onb-open #frame.mobile { zoom: 1.58; }
+
+/* 로고는 상세페이지에서 메인으로 돌아가는 클릭을 받지만(_r7.js enhanceNav)
+   어포던스는 주지 않는다 — 스토어프론트 로고의 기본 표현을 그대로 둔다. */
+
+/* 위젯 갤러리 진입 — 게이트 안 버튼 (원본 위젯 모달을 그대로 연다) */
+#onb .onb__wg {
+  width: 100%; cursor: pointer; font-family: inherit; text-align: left;
+  padding: 13px 15px; border-radius: var(--sds-radius-xl);
+  border: 1px dashed var(--sds-border-strong);
+  background: var(--sds-bg-secondary);
+  font-size: var(--sds-font-size-sm); font-weight: var(--sds-font-weight-bold); letter-spacing: -.02em; color: var(--sds-text-primary);
+}
+#onb .onb__wg:hover { border-color: var(--sds-border-brand); color: var(--sds-text-brand); }
+
+/* 게이트를 닫은 뒤 남는 손잡이 — 온보딩 재오픈 · 위젯 추가 */
+#onbDock {
+  position: fixed; left: 14px; bottom: 14px; z-index: 8999; display: flex; gap: 8px;
+}
+#onbDock[hidden] { display: none; }
+#onbDock button {
+  cursor: pointer; font-family: var(--sds-font-family-base);
+  font-size: var(--sds-font-size-xs); font-weight: var(--sds-font-weight-bold);
+  padding: 9px 14px; border-radius: var(--sds-radius-full); border: 1px solid var(--sds-border-default);
+  background: var(--sds-bg-primary); color: var(--sds-text-primary); box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+}
+#onbDock button:hover { border-color: var(--sds-border-brand); color: var(--sds-text-brand); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   스토어프론트 색·글꼴 — 게이트가 #stage 에 변수만 꽂으면 여기서 받는다.
+   적용 범위는 #sfcanvas(몰) 안쪽뿐 — 빌더 UI 는 항상 SDS 기준(Pretendard)을
+   유지해야 실제 빌더와 같아 보인다. 브랜드색은 몰의 콘텐츠 색이므로
+   SDS 토큰이 아니라 프리셋 팔레트를 쓴다(프로토타입 규칙의 목업 콘텐츠 예외).
+   ═══════════════════════════════════════════════════════════════════════ */
+#stage {
+  --sf-brand: #6d58f2;
+  --sf-font: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+  --sf-font-head: var(--sf-font);
+  --sf-head-ls: -.02em;
+  --sf-head-w: 800;
+}
+/* `*` 까지 내리는 이유 — 위젯 렌더러가 요소마다 폰트를 다시 지정하는 곳이 있어
+   루트에만 걸면 일부 섹션이 Pretendard 로 남는다 */
+#stage #sfcanvas, #stage #sfcanvas * { font-family: var(--sf-font); }
+#stage #sfcanvas .sfsec__h,
+#stage #sfcanvas .sfhdr__logo,
+#stage #sfcanvas .dp-title,
+#stage #sfcanvas [data-wedit="title"] {
+  font-family: var(--sf-font-head);
+  letter-spacing: var(--sf-head-ls);
+  font-weight: var(--sf-head-w);
+}
+
+/* ── 게이트: 색 스와치 · 글꼴 칩 ──────────────────────────────────────── */
+#onb .sw { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#onb .sw__b {
+  width: 34px; height: 34px; padding: 0; border-radius: var(--sds-radius-full);
+  border: 1px solid var(--sds-border-default); cursor: pointer; position: relative;
+}
+#onb .sw__b[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--sds-bg-primary) inset, 0 0 0 2px var(--sds-border-brand); }
+#onb .sw__c {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px 0 6px;
+  border: 1px solid var(--sds-border-default); border-radius: var(--sds-radius-full);
+  font-size: var(--sds-font-size-2xs); color: var(--sds-text-tertiary); cursor: pointer;
+}
+#onb .sw__c input { width: 22px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer; }
+#onb .fg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+@media (max-width: 1200px) { #onb .fg { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+#onb .fc {
+  padding: 9px 6px 8px; border: 1px solid var(--sds-border-default); border-radius: var(--sds-radius-md);
+  background: var(--sds-bg-primary); cursor: pointer; text-align: center; line-height: 1.25;
+}
+#onb .fc:hover { border-color: var(--sds-border-strong); }
+#onb .fc[aria-pressed="true"] { border-color: var(--sds-border-brand); background: var(--sds-bg-brand-subtle); }
+#onb .fc b { display: block; font-size: var(--sds-font-size-sm); font-weight: 700; color: var(--sds-text-primary); }
+#onb .fc span { display: block; margin-top: 3px; font-size: 10px; color: var(--sds-text-tertiary); }
+#onb .fc[aria-pressed="true"] b { color: var(--sds-text-brand); }
+#onb .qb__opt {
+  margin-left: 6px; font-style: normal; font-size: 10px; font-weight: 700; vertical-align: 1px;
+  padding: 2px 6px; border-radius: var(--sds-radius-full);
+  background: var(--sds-bg-tertiary); color: var(--sds-text-tertiary);
+}
+
+/* ── 시안 푸터 (sff2) ──────────────────────────────────────────────────
+   시안 푸터는 짙은 배경 + 좌측 브랜드/사업자 정보 + 우측 3열 링크 + 하단 저작권·SNS 다.
+   빌더 기본 푸터(링크 한 줄 + 회사정보 3줄)와 구조가 달라 _r7.js 가 renderFooter 를 감싼다. */
+#stage .sff2 { padding: 56px 60px 40px; color: rgba(255,255,255,.72); text-align: left; }
+#stage .sff2__top { display: flex; flex-direction: column; gap: 4px; }
+#stage .sff2__brand { display: flex; align-items: flex-end; gap: 7px; margin-bottom: 14px; }
+#stage .sff2__brand b { font-size: 27px; font-weight: 800; letter-spacing: -.01em; color: #fff; }
+#stage .sff2__brand i { font-style: normal; font-size: 12px; color: rgba(255,255,255,.66); padding-bottom: 5px; }
+#stage .sff2__biz { font-size: 12.5px; line-height: 1.75; color: rgba(255,255,255,.62); }
+/* margin-top 음수로 우측 3열을 브랜드 블록 옆으로 끌어올리는데, -104px 이 과해서
+   열 묶음이 푸터 최상단에 그대로 붙어 있었다(측정값 상단 여백 0px · 브랜드보다 38px 위).
+   위쪽만 24px 띄운다 — 좌우·아래로도 24px 을 주면 우측 정렬이 풀려 아래 저작권 줄과 어긋난다. */
+#stage .sff2__cols { display: flex; gap: 68px; justify-content: flex-end; margin-top: -104px; padding-top: 24px; }
+#stage .sff2__col { display: flex; flex-direction: column; gap: 8px; min-width: 108px; }
+#stage .sff2__h { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: rgba(255,255,255,.5); margin-bottom: 4px; }
+#stage .sff2__col span { font-size: 13px; color: rgba(255,255,255,.84); }
+#stage .sff2__bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 46px; padding-top: 22px; border-top: 1px solid rgba(255,255,255,.14);
+  font-size: 12px; color: rgba(255,255,255,.5);
+}
+#stage .sff2__sns { display: flex; gap: 14px; color: rgba(255,255,255,.8); }
+
+/* 모바일 푸터 — 데스크톱은 「브랜드(좌) / 링크 열(우)」 2단이라 열 묶음을 -104px 끌어올려
+   브랜드 옆에 세운다. 좁은 폭에는 나란히 설 자리가 없으니 그 당김이 그대로 **겹침**이 된다:
+   링크가 「VERRE」 위로 올라타 로고와 「1:1 문의 안내」가 한 덩어리로 뭉쳤고, flex-end 로 민
+   열 묶음(3열 × 108 + 간격 68×2 = 460px)이 302px 짜리 폭을 넘어 왼쪽 패딩 밖으로 흘러나갔다.
+   모바일에서는 2단을 포기하고 브랜드 → 링크 순으로 쌓는다. 열은 2개씩 접힌다. */
+#stage #frame.mobile .sff2 { padding: 40px 20px 28px; }
+#stage #frame.mobile .sff2__cols {
+  margin-top: 28px; padding-top: 0;
+  flex-wrap: wrap; justify-content: flex-start; gap: 24px 28px;
+}
+/* 2열 고정 — `flex:1 1 40%` 이면 셋째 열이 혼자 남는 줄에서 폭을 다 먹어
+   「2열 · 1열(넓게)」로 어긋난다. 남는 자리는 비워 두고 열 폭을 같게 맞춘다. */
+#stage #frame.mobile .sff2__col { flex: 0 1 calc(50% - 14px); min-width: 0; }
+#stage #frame.mobile .sff2__bar { margin-top: 28px; flex-wrap: wrap; gap: 12px; }
+
+/* ── ① 업종 분류 칩 ────────────────────────────────────────────────────
+   업종이 10개가 되면서 한 화면에 다 깔면 고르기 어려워졌다. 분류로 먼저 좁힌다.
+   여러 개 고를 수 있고 기본은 '전체'. 한 업종이 두 분류에 걸쳐 있어도(스포츠=라이프+패션)
+   합집합이라 한 번만 나온다. 몰 구성은 안 건드리고 목록만 거른다. */
+#onb .catg { display: flex; flex-wrap: wrap; gap: 6px; margin: -6px 0 14px; }
+#onb .chip {
+  cursor: pointer; font-family: inherit; padding: 6px 12px;
+  border: 1px solid var(--sds-border-default); border-radius: var(--sds-radius-full);
+  background: var(--sds-bg-primary); color: var(--sds-text-secondary);
+  font-size: var(--sds-font-size-xs); font-weight: var(--sds-font-weight-medium); letter-spacing: -.01em;
+  transition: border-color .12s, background .12s, color .12s;
+}
+#onb .chip:hover { border-color: var(--sds-border-strong); }
+#onb .chip[aria-pressed="true"] {
+  border-color: var(--sds-border-brand); background: var(--sds-bg-brand-subtle);
+  color: var(--sds-text-brand); font-weight: var(--sds-font-weight-bold);
+}
+#onb .cat0 { grid-column: 1 / -1; padding: 18px 2px; font-size: var(--sds-font-size-xs); color: var(--sds-text-tertiary); }
+
+/* ── 「대표 1종 강조」 상품 그리드 폭 상한 ──────────────────────────────────
+   1열이면 칸이 본문 폭(1200px) 전체가 되고 카드 이미지가 aspect-ratio 1/1 이라
+   1200x1200 사진 자리가 만들어졌다. 업종 상품컷 원본은 1024px(시안 실측) ~ 480px
+   (p*.jpg)라 전부 확대돼 뭉개졌다 — 식료품 1개 표시에서 보고된 증상이 이것이다.
+   640px 로 잡으면 1024 원본은 축소돼 선명하고, 480 원본도 1.3배 안쪽에 든다.
+   3열(384px)·4열(285px)보다는 확실히 크므로 「대표 1종」의 의도도 유지된다. */
+#stage .bgrid--n1 { max-width: 640px; margin-left: auto; margin-right: auto; }
+
+/* ═══ 게이트 레이아웃 ═══════════════════════════════════════════════════════
+   R8 은 여기서 세 골격(a 순차 · b 병렬 · c 계층)을 나란히 놓고 비교했고,
+   **a(한 문항 풀스텝)로 확정됐다**. R9 는 b·c 규칙 53개를 걷어냈다(747 → 643줄).
+   세 안을 다시 대 보려면 round-8/ 이 그대로 남아 있다.
+
+   `[data-lay="a"]` 접두는 **일부러 남겨 뒀다** — 떼면 특정도가 한 단계 내려가
+   앞쪽 규칙과의 승패가 조용히 뒤집힌다. 이제 값이 하나뿐인 표식일 뿐이다.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── A · 한 문항 풀스텝 ─────────────────────────────────────────────────── */
+/* 진행 레일 — 「전체가 몇 개 · 지금 어디 · 앞에서 뭘 골랐나」를 붙박이로 들고 있다.
+   한 문항씩 보여 주는 방식이 잃는 건 맥락이고, 그걸 되돌려 받는 장치가 이 줄이다. */
+#onb[data-lay="a"] .prg { display: flex; gap: 4px; margin-bottom: 22px; }
+#onb[data-lay="a"] .prg__i {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 8px 8px 9px; border: 0; border-top: 2px solid var(--sds-border-default);
+  background: none; font-family: inherit; text-align: left; cursor: pointer;
+}
+#onb[data-lay="a"] .prg__i i {
+  display: grid; place-items: center; width: 17px; height: 17px; font-style: normal;
+  font-size: 10px; font-weight: var(--sds-font-weight-bold); border-radius: var(--sds-radius-full);
+  background: var(--sds-bg-tertiary); color: var(--sds-text-tertiary);
+}
+#onb[data-lay="a"] .prg__i b {
+  font-size: var(--sds-font-size-2xs); font-weight: var(--sds-font-weight-bold);
+  color: var(--sds-text-tertiary); letter-spacing: -.02em;
+}
+/* 고른 값은 한 줄로 자른다 — 레일은 현재 상태를 알리는 곳이지 읽는 곳이 아니다 */
+#onb[data-lay="a"] .prg__i span {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10px; color: var(--sds-text-tertiary);
+}
+#onb[data-lay="a"] .prg__i[data-done] { border-top-color: var(--sds-border-brand); }
+#onb[data-lay="a"] .prg__i[data-done] i { background: var(--sds-bg-brand-subtle); color: var(--sds-text-brand); }
+#onb[data-lay="a"] .prg__i[data-done] b { color: var(--sds-text-secondary); }
+#onb[data-lay="a"] .prg__i[aria-current] { border-top-color: var(--sds-bg-brand); }
+#onb[data-lay="a"] .prg__i[aria-current] i { background: var(--sds-bg-brand); color: #fff; }
+#onb[data-lay="a"] .prg__i[aria-current] b { color: var(--sds-text-primary); }
+
+#onb[data-lay="a"] .stp__t {
+  font-size: var(--sds-font-size-xl); font-weight: var(--sds-font-weight-bold);
+  letter-spacing: -.03em; line-height: var(--sds-line-height-tight);
+}
+#onb[data-lay="a"] .stp__s {
+  margin: 6px 0 18px; font-size: var(--sds-font-size-sm); color: var(--sds-text-tertiary);
+  line-height: var(--sds-line-height-snug);
+}
+/* 한 문항이 화면을 다 쓰므로 카드를 키운다 — 정보를 더 크게 보여 주는 게 이 안의 값이다.
+   사진은 3:2 대신 16:9 로 눕힌다: 업종이 10개라 3:2 로 키우면 ①번만 두 화면을 넘긴다
+   (한 문항에 집중시키자면서 그 한 문항이 화면을 두 번 넘기면 앞뒤가 안 맞는다). */
+#onb[data-lay="a"] .ig { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+#onb[data-lay="a"] .ic b{ font-size: 18px; margin: 16px; letter-spacing: -.03em; }
+/* 상품 수·구성이 각자 한 스텝이던 때는 1열로 크게 깔았다. 셋을 한 화면으로 묶은 뒤로는
+   1열이면 3+4 = 7행이 되어 화면을 넘긴다 → 원래 열 수(3열 · 2열)로 되돌린다. */
+#onb[data-lay="a"] .cg { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#onb[data-lay="a"] .pset { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#onb[data-lay="a"] .cc, #onb[data-lay="a"] .pcard { padding: 13px 14px; }
+#onb[data-lay="a"] .cc b, #onb[data-lay="a"] .pcard b { font-size: var(--sds-font-size-md); }
+#onb[data-lay="a"] .cc span, #onb[data-lay="a"] .pcard span { font-size: var(--sds-font-size-xs); margin-top: 5px; }
+#onb[data-lay="a"] .onb__prev {
+  flex: none; cursor: pointer; font-family: inherit;
+  padding: 13px 14px; border-radius: var(--sds-radius-xl);
+  border: 1px solid var(--sds-border-default); background: var(--sds-bg-primary);
+  font-size: var(--sds-font-size-sm); color: var(--sds-text-secondary);
+}
+#onb[data-lay="a"] .onb__prev:hover { border-color: var(--sds-border-strong); }
+
+/* ── B · 한 판 컨트롤 보드 ──────────────────────────────────────────────── */
+/* 패널이 통째로 구르지 않는다 — 다섯 항목이 전부 화면 안에 서 있고{ overflow: hidden; display: flex; flex-direction: column; }/* 항목 사이 간격은 「한 화면에 다 들어간다」가 깨지지 않는 선까지만 준다 —
+   여기서 4px 씩 더 벌리면 위젯 버튼이 접히고, 그 순간 이 시안의 전제가 무너진다. *//* 업종 — 카드 그리드가 아니라 목록 행. 같은 마크업을 CSS 로만 눕힌다.
+   슬로건은 고른 행에서만 편다(전부 펴면 10줄이 두 배가 돼 한 화면에 안 들어온다). *//* 나머지 항목은 세로 목록으로 — 좁은 칸에서 2열 그리드는 글자가 두 줄로 접힌다 */
+/* ── C · 항목 레일 + 상세 ───────────────────────────────────────────────── */
+/* 빌더가 이미 쓰는 조작을 온보딩에 그대로. 레일에는 항목마다 지금 값이 붙어 있어
+   접혀 있어도 상태가 읽히고{ overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
+/* ── 묶인 스텝(상품 수 · 구성 · 색·글꼴) ───────────────────────────────────
+   세 축을 한 화면에 두되 소제목으로만 나눈다. 각각을 카드로 감싸면 화면 안에서
+   세 덩이로 다시 쪼개져, 묶은 이유(함께 보며 조정한다)가 사라진다. */
+#onb .mgrp + .mgrp { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--sds-border-default); }
+/* 설명 한 줄(`.mgrp__s`)을 걷었으므로 제목 아래 간격을 제목이 직접 갖는다 —
+   그 규칙의 `margin-bottom:12px` 이 여태 이 간격을 만들고 있었다(빼면 옵션이 제목에 붙는다). */
+#onb .mgrp__h { display: flex; align-items: baseline; gap: 7px; margin-bottom: 11px; }
+#onb .mgrp__h b { font-size: var(--sds-font-size-md); font-weight: var(--sds-font-weight-bold); letter-spacing: -.02em; }
+#onb .mgrp__h em {
+  font-style: normal; font-size: var(--sds-font-size-2xs); font-weight: var(--sds-font-weight-bold);
+  padding: 2px 6px; border-radius: var(--sds-radius-full);
+  background: var(--sds-bg-secondary); color: var(--sds-text-tertiary);
+}
+
+/* ── 내 상품 사진 — 네모 드롭 존 ─────────────────────────────────────────────
+   「버튼을 눌러 파일을 고른다」에서 **박스에 끌어다 놓는다**로 바꿨다. 사진을 올리는
+   자리는 그 자리 자체가 사진을 받는 모양(점선 네모)이어야 무엇을 하는 칸인지 읽힌다.
+   누르면 파일 창도 열린다 — 끌어다 놓기만 아는 장치는 트랙패드·터치에서 길이 없다.
+   올린 사진은 박스 **안에** 쌓이고 그 끝에 ＋ 타일이 늘 서 있다(다음 칸이 비어 있음을 보여 준다). */
+#onb .mdz {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 14px;
+  padding: 14px; cursor: pointer;
+  border: 1px dashed var(--sds-border-strong); border-radius: var(--sds-radius-xl);
+  background: var(--sds-bg-secondary);
+  transition: border-color .12s, background .12s;
+}
+#onb .mdz:hover { border-color: var(--sds-border-brand); }
+/* 끌고 들어온 동안 — 여기가 받는 자리라고 색으로 답한다(놓을 때까지 아무 반응이 없으면 되는지 모른다) */
+#onb .mdz.is-over { border-color: var(--sds-border-brand); background: var(--sds-bg-brand-subtle); }
+#onb .mdz__hint {
+  flex: 1; min-width: 150px; font-size: var(--sds-font-size-xs);
+  line-height: var(--sds-line-height-snug); color: var(--sds-text-tertiary);
+}
+/* 서브 텍스트를 뺐으므로 `margin-bottom: 2px` 도 같이 지운다 — 아래에 붙을 줄이 없어져
+   그 2px 이 박스 안 세로 중앙을 어긋나게 만든다(한 줄만 남으면 눈에 띈다). */
+#onb .mdz__hint b {
+  display: block; font-weight: var(--sds-font-weight-bold); color: var(--sds-text-secondary);
+  letter-spacing: -.02em;
+}
+/* 박스 밖 아래 줄에는 취소 하나만 남는다 — 상태 문구는 걷었다(썸네일 번호가 그 정보다) */
+#onb .mup { display: flex; margin-top: 8px; }
+#onb .mup__clr {
+  flex: none; cursor: pointer; font-family: inherit; background: none; border: none; padding: 0;
+  font-size: var(--sds-font-size-xs); color: var(--sds-text-tertiary);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+#onb .myths { display: flex; flex-wrap: wrap; gap: 8px; }
+#onb .myth, #onb .myadd { width: 56px; }
+#onb .myth { position: relative; }
+#onb .myth i {
+  display: block; width: 56px; height: 56px; border-radius: var(--sds-radius-md);
+  background-size: cover; background-position: center; border: 1px solid var(--sds-border-default);
+}
+/* ＋ 타일 — 썸네일과 **같은 크기·같은 자리**에 서서 「다음 칸」으로 읽히게 한다.
+   버튼처럼 따로 떼어 놓으면 사진 줄과 관계가 끊겨 「몇 번째로 들어갈지」가 안 보인다. */
+#onb .myadd { cursor: pointer; }
+#onb .myadd > span {
+  display: grid; place-items: center; width: 56px; height: 56px;
+  border: 1px dashed var(--sds-border-strong); border-radius: var(--sds-radius-md);
+  background: var(--sds-bg-primary); color: var(--sds-text-tertiary);
+  font-size: 20px; line-height: 1;
+}
+#onb .myadd > b {
+  display: block; margin-top: 3px; text-align: center;
+  font-size: var(--sds-font-size-2xs); font-weight: var(--sds-font-weight-bold); color: var(--sds-text-tertiary);
+}
+#onb .myadd:hover > span { border-color: var(--sds-border-brand); color: var(--sds-text-brand); }
+#onb .myadd:hover > b { color: var(--sds-text-brand); }#onb .myth b {
+  display: block; margin-top: 3px; text-align: center;
+  font-size: var(--sds-font-size-2xs); font-weight: var(--sds-font-weight-bold); color: var(--sds-text-tertiary);
+}
+#onb .myth__x {
+  position: absolute; top: -5px; right: -5px; width: 17px; height: 17px; padding: 0;
+  cursor: pointer; font-family: inherit; line-height: 1;
+  border: 1px solid var(--sds-border-default); border-radius: var(--sds-radius-full);
+  background: var(--sds-bg-primary); color: var(--sds-text-tertiary); font-size: 11px;
+}
+#onb .myth__x:hover { border-color: var(--sds-border-brand); color: var(--sds-text-brand); }

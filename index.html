@@ -90,11 +90,12 @@
 
   /* 체험 임베드 — 1440 고정 렌더 후 컨테이너 폭에 맞춰 축소(scale) */
   .exp-outer{ margin:26px auto 0; width:100%; }
-  .exp-wrap{ position:relative; width:100%; aspect-ratio:1382 / 864; overflow:hidden;
+  .exp-wrap{ position:relative; width:100%; aspect-ratio:1440 / 985; overflow:hidden;
     border-radius:var(--r-lg); border:1px solid var(--line); box-shadow:0 20px 60px rgba(60,45,25,.16); background:#f1f3f5; }
-  /* 프로토타입 배경/여백 크롭 → 빌더 창(29,79 · 1382×864)만 꽉 채움 */
-  .exp-frame{ position:absolute; width:1440px; height:985px; border:0;
-    top:calc(-79px * var(--exp-s,1)); left:calc(-29px * var(--exp-s,1));
+  /* 크롭 없음 — proto-gate 는 1440×985 화면 전체를 그대로 쓴다.
+     구 proto 는 가짜 브라우저 창을 그려 놓고 그 안쪽(29,79 · 1382×864)만 잘라 썼는데,
+     같은 크롭을 새 프로토에 대면 왼쪽 문구와 하단 「다음」 버튼이 잘려 나간다. */
+  .exp-frame{ position:absolute; width:1440px; height:985px; border:0; top:0; left:0;
     transform-origin:top left; transform:scale(var(--exp-s,1)); }
 
   /* 위젯 카탈로그 그리드 */
@@ -357,11 +358,13 @@
     <h2>지금, 여기서 <b>직접 만져보세요</b></h2>
     <p class="lead">아래 화면에서 실제 편집을 바로 체험할 수 있어요. (PC: 인라인 체험 / 모바일: 새 탭)</p>
     <div style="margin-top:24px;">
-      <a class="btn" href="proto/index.html" target="_blank" rel="noopener">▶ 새 창에서 크게 시작하기</a>
+      <!-- 체험 프로토타입: proto/(구 canvas-intro 빌더) → proto-gate/(업종을 고르면 첫 화면이 완성되는 온보딩판)로 교체.
+           구 proto/ 는 이미지 자산(../proto/assets/)을 proto-gate 가 그대로 참조하므로 지우지 않는다. -->
+      <a class="btn" href="proto-gate/index.html" target="_blank" rel="noopener">▶ 새 창에서 크게 시작하기</a>
     </div>
     <div class="exp-outer" id="expArea">
       <div class="exp-wrap">
-        <iframe class="exp-frame" src="proto/index.html?embed=1"
+        <iframe class="exp-frame" src="proto-gate/index.html?embed=1"
                 title="알파캔버스 빌더 체험" scrolling="no"
                 loading="lazy" allow="fullscreen"></iframe>
       </div>
@@ -480,7 +483,9 @@
       <div class="fitem"><div class="q">스킨은 몇 번까지 바꿀 수 있나요?</div><div class="a">횟수 제한이 없어요. 구매 후 1년간 등록된 모든 스킨을 원하는 만큼 교체할 수 있고, 그 기간에 새로 추가되는 스킨도 포함됩니다.</div></div>
     </div>
     <div class="center" style="margin-top:36px;">
-      <a class="btn big" href="proto/index.html" target="_blank" rel="noopener">직접 체험 시작하기 →</a>
+      <!-- FAQ 하단 체험 CTA — 위 「직접 체험」 섹션과 같은 곳으로 보낸다.
+           한 페이지에서 두 버튼이 서로 다른 프로토타입을 열면 어느 쪽이 제품인지 못 읽는다. -->
+      <a class="btn big" href="proto-gate/index.html" target="_blank" rel="noopener">직접 체험 시작하기 →</a>
     </div>
   </section>
 
@@ -576,7 +581,9 @@
   (function(){
     var wrap=document.querySelector('.exp-wrap');
     if(!wrap) return;
-    function fit(){ wrap.style.setProperty('--exp-s', (wrap.clientWidth/1382).toString()); }
+    /* 1440 = 프로토 렌더 폭. 예전엔 크롭 폭(1382)으로 나눴는데, 크롭을 걷어낸 지금
+       그 값을 그대로 두면 배율이 4% 커져 오른쪽·아래가 틀 밖으로 밀린다. */
+    function fit(){ wrap.style.setProperty('--exp-s', (wrap.clientWidth/1440).toString()); }
     fit();
     window.addEventListener('resize', fit);
   })();
