@@ -36,6 +36,59 @@
 
   if (!APP.applicationId || !APP.clientToken) return;   /* 꺼진 상태 — 정상 */
 
+  /* ── 누가 썼는지 (몰 식별) ─────────────────────────────────────────────────
+     프로토는 카페24 로그인 «밖»(S3 · pages.dev)에서 도는 다른 오리진이라 로그인
+     컨텍스트를 읽을 수 없다. 그래서 `@usr.id` 가 비어 있었고, 대시보드의 구매 클릭률은
+     분모·분자가 전부 익명 세션이라 「누가 눌렀나」를 되짚을 수 없었다.
+
+     대신 «밖에서 실려 들어오는» 값으로 몰을 식별한다. 신뢰순으로 셋:
+       ① tc_mall   — 링크 발급 쪽(sample-intro)이 실어 주는 카페24 몰 아이디. 정본.
+       ② referrer  — iframe 부모(프로토를 임베드한 몰)의 host. 발급 쪽 변경 없이
+                     지금 당장 동작하는 유일한 경로다.
+       ③ tc_sid    — 방문 단위 id. 사람은 아니지만 서버측 발급 로그와 붙이는 조인 키.
+     하나도 없으면 `setUser` 를 호출하지 «않는다» — 종전과 똑같이 익명으로 돈다(안 깨진다).
+
+     referrer 를 usr 에 박는 이유: referrer 는 세션의 «첫 뷰»에만 실리므로 그걸로
+     group_by 하면 뒤쪽 이벤트가 통째로 빠진다(구매 클릭 28세션이 13행으로 줄던 원인).
+     `setUser` 는 세션 전체에 붙으므로 그 누락이 사라진다.
+
+     어느 경로로 알아낸 값인지는 `@usr.id_source` 로 남긴다 — `mall` 만 골라 보면
+     「몰이 확실한 세션」의 지표가 되고, 섞어 보면 커버리지가 된다.
+
+     ⚠ 몰 아이디까지만 보낸다. 담당자 이름·연락처·이메일은 절대 싣지 않는다 —
+     `defaultPrivacyLevel:'allow'` + 리플레이 100% 라 한 번 들어가면 회수가 안 된다. */
+  function mallFromReferrer() {
+    var r = document.referrer || '';
+    if (!r) return null;
+    var host;
+    try { host = new URL(r).hostname; } catch (e) { return null; }
+    /* 카페24 몰만 인정한다 — 우리 호스팅(pages.dev · S3)은 몰이 아니다 */
+    if (!/\.cafe24\.com$/i.test(host)) return null;
+    return host.replace(/\.cafe24\.com$/i, '');   /* ecudemo402189.cafe24.com → ecudemo402189 */
+  }
+
+  function identify() {
+    var q = null;
+    try { q = new URLSearchParams(location.search); } catch (e) {}
+    var g = function (k) { return q ? q.get(k) : null; };
+
+    var mall = g('tc_mall');           /* ① 정본 — 아직 발급 쪽에 없다(CANV-2465 1번) */
+    var ref  = mallFromReferrer();     /* ② 지금 동작하는 경로 */
+    var sid  = g('tc_sid');            /* ③ 조인 키 */
+
+    var id = mall || ref || sid;
+    if (!id) return;                   /* 붙일 게 없다 — 익명 유지 */
+
+    window.DD_RUM.setUser({
+      id: id,
+      id_source: mall ? 'mall' : (ref ? 'referrer' : 'sid'),
+      mall: mall || ref || null,       /* 몰로 확정된 경로만. sid 뿐이면 null */
+      tc_src: g('tc_src') || null,
+      tc_sid: sid || null
+    });
+  }
+
+
   var s = document.createElement('script');
   s.src = 'https://www.datadoghq-browser-agent.com/us1/v6/datadog-rum.js';
   s.async = true;
@@ -64,6 +117,9 @@
       window.DD_RUM.setGlobalContextProperty('variant',
         (window.R9_LAY === 'b' || window.R9_LAY === 'c') ? window.R9_LAY : 'a');
     } catch (e) {}
+
+    /* 누가 썼는지 — 몰 식별을 세션에 박는다 (위 identify 주석 참조) */
+    try { identify(); } catch (e) {}
 
     /* 어디서 들어온 세션인지 — 샘플몰 인트로 모달(skin25-zigt sample-mall-intro-modal.js)이
        CTA 에 `?tc_src=sample-intro&tc_sid=…` 를 붙여 보낸다. 그쪽은 Datadog Logs 로
