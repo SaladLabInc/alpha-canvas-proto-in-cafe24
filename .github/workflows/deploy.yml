@@ -3,7 +3,7 @@ name: Deploy to Cloudflare Pages
 # main에 머지/푸시되면 자동 배포. Actions 탭에서 수동 실행(Run workflow)도 가능.
 on:
   push:
-    branches: [main]
+    branches: [main, preview-detail]
   workflow_dispatch:
 
 concurrency:
@@ -23,4 +23,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy . --project-name=alpha-canvas-proto-in-cafe24 --branch=main
+          command: pages deploy . --project-name=alpha-canvas-proto-in-cafe24 --branch=${{ github.ref_name }}
